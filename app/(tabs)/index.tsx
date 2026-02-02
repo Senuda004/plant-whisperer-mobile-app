@@ -13,7 +13,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import * as ImagePicker from "expo-image-picker";
 import * as ImageManipulator from "expo-image-manipulator";
 
-const API_URL = "http://13.61.19.142:5000/predict"; // <-- your EC2 IP
+const API_URL = "http://13.62.8.232:5000/predict"; // <-- your EC2 IP
 
 export default function HomeScreen() {
   const [pickedUri, setPickedUri] = useState<string | null>(null);
