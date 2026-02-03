@@ -13,42 +13,62 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import * as ImagePicker from "expo-image-picker";
 import * as ImageManipulator from "expo-image-manipulator";
 
-const API_URL = "http://13.62.8.232:5000/predict"; // <-- your EC2 IP
+// Backend API endpoint for plant disease prediction
+const API_URL = "http://13.62.8.232:5000/predict";
 
+/**
+ * HomeScreen component - main interface for plant disease detection
+ * Allows users to select leaf images and receive AI-powered diagnosis with visual explanations
+ */
 export default function HomeScreen() {
+  // Selected image URI from device gallery
   const [pickedUri, setPickedUri] = useState<string | null>(null);
+  
+  // API request loading state
   const [loading, setLoading] = useState(false);
 
+  // Model prediction result (disease name)
   const [prediction, setPrediction] = useState<string | null>(null);
+  
+  // Model confidence score (0-1 or 0-100)
   const [confidence, setConfidence] = useState<number | null>(null);
 
-  // Grad-CAM base64 from API
+  // Grad-CAM visualization as base64 string from API
   const [gradcamBase64, setGradcamBase64] = useState<string | null>(null);
 
-  // Optional toggle
+  // Flag to request Grad-CAM heatmap from server
   const includeGradcam = true;
 
+  // Normalize confidence to percentage (0-100) and clamp to valid range
   const confidencePct = useMemo(() => {
     if (confidence === null || Number.isNaN(confidence)) return null;
     const c = confidence > 1 ? confidence : confidence * 100;
     return Math.max(0, Math.min(100, c));
   }, [confidence]);
 
+  // Convert base64 Grad-CAM data to data URI for Image component
   const gradcamUri = useMemo(() => {
     if (!gradcamBase64) return null;
     return `data:image/png;base64,${gradcamBase64}`;
   }, [gradcamBase64]);
 
+  // Format disease labels: replace underscores with spaces and capitalize each word
   const prettyLabel = (s: string) =>
     s.replaceAll("_", " ").replace(/\b\w/g, (c) => c.toUpperCase());
 
+  /**
+   * Handle image selection from device gallery
+   * Requests permissions, launches picker, and sends selected image to API
+   */
   const pickImage = async () => {
+    // Request media library permissions
     const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (!perm.granted) {
       Alert.alert("Permission needed", "Please allow photo access.");
       return;
     }
 
+    // Launch image picker with base64 encoding enabled
     const result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ImagePicker.MediaTypeOptions.Images,
       quality: 0.85,
@@ -59,6 +79,7 @@ export default function HomeScreen() {
 
     const asset = result.assets[0];
 
+    // Update UI and clear previous results
     setPickedUri(asset.uri);
     setPrediction(null);
     setConfidence(null);
@@ -72,10 +93,15 @@ export default function HomeScreen() {
     await sendToApi(asset.base64);
   };
 
+  /**
+   * Send image to prediction API and handle response
+   * @param imageBase64 - Base64 encoded image data
+   */
   const sendToApi = async (imageBase64: string) => {
     try {
       setLoading(true);
 
+      // Send POST request with image data and Grad-CAM flag
       const res = await fetch(API_URL, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -86,19 +112,24 @@ export default function HomeScreen() {
       });
 
       const data = await res.json();
+      
+      // Debug logging for Grad-CAM response
       console.log("gradcam head:", data.gradcam_png_base64?.slice(0, 30));
       console.log("gradcam has data uri:", data.gradcam_png_base64?.startsWith("data:image"));
       console.log("gradcam length:", data.gradcam_png_base64?.length);
 
+      // Handle API errors
       if (!res.ok) {
         console.log("API error:", data);
         Alert.alert("API Error", data?.error || "Server error");
         return;
       }
 
+      // Update state with prediction results
       setPrediction(data.prediction ?? null);
       setConfidence(typeof data.confidence === "number" ? data.confidence : null);
 
+      // Store Grad-CAM base64 if present and valid
       if (
         typeof data.gradcam_png_base64 === "string" &&
         data.gradcam_png_base64.length > 0
@@ -108,6 +139,7 @@ export default function HomeScreen() {
         setGradcamBase64(null);
       }
     } catch (e: any) {
+      // Handle network connectivity errors
       console.log("Network error:", e?.message || e);
       Alert.alert(
         "Network Error",
@@ -118,23 +150,25 @@ export default function HomeScreen() {
     }
   };
 
+  // Check if prediction results are available for display
   const hasResult = Boolean(prediction) || confidencePct !== null;
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: "#F8FAFC" }}>
       <StatusBar barStyle="dark-content" backgroundColor="#F8FAFC" />
 
+      {/* Main scrollable content container with consistent padding */}
       <ScrollView
         contentContainerStyle={{
           paddingHorizontal: 16,
-          paddingTop: 16, // ✅ small extra space; SafeArea handles the rest
+          paddingTop: 16,
           paddingBottom: 28,
           gap: 14,
           backgroundColor: "#F8FAFC",
           flexGrow: 1,
         }}
       >
-        {/* Header */}
+        {/* App title and description */}
         <View style={{ gap: 6 }}>
           <Text style={{ fontSize: 26, fontWeight: "800", color: "#0F172A" }}>
             Plant Whisperer 🌱
@@ -144,7 +178,7 @@ export default function HomeScreen() {
           </Text>
         </View>
 
-        {/* Upload / Preview Card */}
+        {/* Image upload and preview card */}
         <View
           style={{
             backgroundColor: "white",
@@ -160,6 +194,7 @@ export default function HomeScreen() {
             elevation: 2,
           }}
         >
+          {/* Initial state: image picker button */}
           {!pickedUri ? (
             <Pressable
               onPress={pickImage}
@@ -179,6 +214,7 @@ export default function HomeScreen() {
               </Text>
             </Pressable>
           ) : (
+            /* After image selected: show preview with replace option */
             <View style={{ gap: 10 }}>
               <View
                 style={{
@@ -210,7 +246,7 @@ export default function HomeScreen() {
             </View>
           )}
 
-          {/* Loading */}
+          {/* Show loading spinner during API request */}
           {loading && (
             <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
               <ActivityIndicator />
@@ -221,7 +257,7 @@ export default function HomeScreen() {
           )}
         </View>
 
-        {/* Result Card */}
+        {/* Prediction results display card */}
         <View
           style={{
             backgroundColor: "white",
@@ -249,6 +285,7 @@ export default function HomeScreen() {
               Result
             </Text>
 
+            {/* Disease label badge */}
             <View
               style={{
                 paddingVertical: 6,
@@ -265,6 +302,7 @@ export default function HomeScreen() {
             </View>
           </View>
 
+          {/* Confidence score with progress bar */}
           <View style={{ gap: 8 }}>
             <View style={{ flexDirection: "row", justifyContent: "space-between" }}>
               <Text style={{ color: "#475569", fontWeight: "700" }}>
@@ -275,6 +313,7 @@ export default function HomeScreen() {
               </Text>
             </View>
 
+            {/* Visual progress bar for confidence percentage */}
             <View
               style={{
                 height: 10,
@@ -299,7 +338,7 @@ export default function HomeScreen() {
           </View>
         </View>
 
-        {/* Grad-CAM Card */}
+        {/* Grad-CAM explainability visualization card */}
         <View
           style={{
             backgroundColor: "white",
@@ -343,6 +382,7 @@ export default function HomeScreen() {
             </View>
           </View>
 
+          {/* Show placeholder or heatmap image based on availability */}
           {!gradcamUri ? (
             <Text style={{ color: "#64748B", lineHeight: 18 }}>
               Pick an image to generate a Grad-CAM heatmap overlay.
@@ -365,7 +405,7 @@ export default function HomeScreen() {
           </Text>
         </View>
 
-        {/* Footer note */}
+        {/* Future development note */}
         <Text style={{ color: "#64748B", lineHeight: 18 }}>
           Next: We can save prediction history using Supabase (Storage + Postgres).
         </Text>
